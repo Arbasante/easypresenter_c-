@@ -107,29 +107,39 @@ private:
                 std::string nombre_bd = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
                 std::string n_lower = to_lower(nombre_bd);
                 
-                std::string sigla = nombre_bd; 
+                std::string sigla = "OTRA"; 
                 std::string nombre_comp = nombre_bd;
-                
-                int prioridad = 999; // Por defecto van al final
+                int prioridad = 999; 
 
-                // Reglas de prioridad y nombres
-                if (n_lower.find("reina") != std::string::npos || n_lower.find("1960") != std::string::npos) {
-                    prioridad = 0; // Reina Valera siempre de primera
+                // Lógica de Alias (Siglas) y Nombres Completos Oficiales
+                if (n_lower.find("reina") != std::string::npos || n_lower.find("1960") != std::string::npos) { 
+                    sigla = "RVR"; nombre_comp = "Reina Valera 1960"; prioridad = 0; 
                 }
-                else if (n_lower.find("nvi") != std::string::npos) prioridad = 1;
-                else if (n_lower.find("ntv") != std::string::npos) prioridad = 2;
-                else if (n_lower.find("tla") != std::string::npos) prioridad = 3;
-                else if (n_lower.find("lbla") != std::string::npos || n_lower.find("americas") != std::string::npos) prioridad = 4;
-                else if (n_lower.find("interconfesional") != std::string::npos || n_lower.find("dhh") != std::string::npos) { 
-                    sigla = "DHH"; // Solo DHH usa sigla
-                    prioridad = 5; 
+                else if (n_lower.find("nvi") != std::string::npos) { 
+                    sigla = "NVI"; nombre_comp = "Nueva Versión Internacional"; prioridad = 1; 
+                }
+                else if (n_lower.find("ntv") != std::string::npos) { 
+                    sigla = "NTV"; nombre_comp = "Nueva Traducción Viviente"; prioridad = 2; 
+                }
+                else if (n_lower.find("lbla") != std::string::npos || n_lower.find("americas") != std::string::npos) { 
+                    sigla = "LBLA"; nombre_comp = "La Biblia de las Américas"; prioridad = 3; 
+                }
+                else if (n_lower.find("tla") != std::string::npos) { 
+                    sigla = "TLA"; nombre_comp = "Traducción en Lenguaje Actual"; prioridad = 4; 
+                }
+                else if (n_lower.find("dhh") != std::string::npos || n_lower.find("interconfesional") != std::string::npos) { 
+                    sigla = "DHH"; nombre_comp = "Dios Habla Hoy"; prioridad = 5; 
+                }
+                else {
+                    // Si metes una biblia nueva rara, agarra las primeras 4 letras en mayúscula
+                    sigla = nombre_bd.substr(0, 4);
+                    std::transform(sigla.begin(), sigla.end(), sigla.begin(), ::toupper);
                 }
 
                 versiones_cargadas.push_back({id, sigla, nombre_comp, prioridad});
             }
         } sqlite3_finalize(stmt);
         
-        // Ordena la lista basada en la prioridad que asignamos arriba
         std::sort(versiones_cargadas.begin(), versiones_cargadas.end(), [](const VersionInfo& a, const VersionInfo& b) { return a.prioridad < b.prioridad; });
         if (!versiones_cargadas.empty()) current_version_id = versiones_cargadas[0].id;
     }
@@ -187,10 +197,11 @@ public:
 
     std::vector<VersionInfo> get_versiones() { return versiones_cargadas; }
 
-    std::string set_version_by_sigla(const std::string& sigla) {
+    // NUEVO: Busca por el Nombre Completo
+    std::string set_version_by_name(const std::string& name) {
         std::lock_guard<std::mutex> lock(db_mutex);
         for(const auto& v : versiones_cargadas) {
-            if(v.sigla == sigla) { current_version_id = v.id; return v.nombre_completo; }
+            if(v.nombre_completo == name) { current_version_id = v.id; return v.nombre_completo; }
         } return "";
     }
 
@@ -261,7 +272,6 @@ int main() {
 
     ui->on_abrir_proyector([proyector]() mutable { proyector->window().set_position(slint::PhysicalPosition({1920, 0})); proyector->window().set_fullscreen(true); proyector->show(); });
     
-    // AQUÍ SE RECIBEN LAS 2 CADENAS DE TEXTO
     ui->on_proyectar_estrofa([proyector](slint::SharedString texto, slint::SharedString referencia) mutable { 
         proyector->set_texto_proyeccion(texto); 
         proyector->set_referencia(referencia); 
@@ -269,9 +279,14 @@ int main() {
 
     auto versiones = app_state.get_versiones();
     std::vector<slint::SharedString> versiones_slint;
-    for (const auto& v : versiones) versiones_slint.push_back(slint::SharedString(v.sigla));
+    // AQUÍ PASAMOS LOS NOMBRES COMPLETOS AL COMBOBOX
+    for (const auto& v : versiones) versiones_slint.push_back(slint::SharedString(v.nombre_completo));
     ui->set_bible_versions(std::make_shared<slint::VectorModel<slint::SharedString>>(versiones_slint));
-    if (!versiones.empty()) { ui->set_current_bible_version(slint::SharedString(versiones[0].sigla)); ui->set_current_bible_full_name(slint::SharedString(versiones[0].nombre_completo)); app_state.set_version_by_sigla(versiones[0].sigla); }
+    
+    if (!versiones.empty()) { 
+        ui->set_current_bible_version(slint::SharedString(versiones[0].nombre_completo)); 
+        app_state.set_version_by_name(versiones[0].nombre_completo); 
+    }
 
     auto cargar_libros_biblia = [&app_state, ui]() {
         auto libros = app_state.get_libros_biblia(); std::vector<BookInfo> libros_slint;
@@ -280,9 +295,9 @@ int main() {
     };
     cargar_libros_biblia();
 
-    ui->on_bible_version_changed([&app_state, ui, proyector, cargar_libros_biblia, current_biblia_libro, current_biblia_capitulo](slint::SharedString sigla) mutable {
-        std::string full_name = app_state.set_version_by_sigla(std::string(sigla));
-        ui->set_current_bible_full_name(slint::SharedString(full_name));
+    // AQUÍ EL CALLBACK RECIBE EL NOMBRE COMPLETO ("Reina Valera 1960") DESDE EL COMBOBOX
+    ui->on_bible_version_changed([&app_state, ui, proyector, cargar_libros_biblia, current_biblia_libro, current_biblia_capitulo](slint::SharedString name) mutable {
+        app_state.set_version_by_name(std::string(name));
         cargar_libros_biblia();
 
         if (*current_biblia_libro != -1 && *current_biblia_capitulo != -1) {
