@@ -219,6 +219,7 @@ public:
     }
 
     std::vector<VersionInfo> get_versiones() { return versiones_cargadas; }
+    int get_current_version_id() { return current_version_id; }
 
     // NUEVO: Busca por el Nombre Completo
     std::string set_version_by_name(const std::string& name) {
@@ -266,6 +267,16 @@ public:
     }
 };
 
+
+// Helper para obtener la sigla de la versión actual
+std::string get_sigla_version(AppState& app_state) {
+    int current_id = app_state.get_current_version_id();
+    for (const auto& v : app_state.get_versiones()) {
+        if (v.id == current_id) return v.sigla;
+    }
+    return "";
+}
+
 int main() {
     AppState app_state;
     auto ui = AppWindow::create();
@@ -295,8 +306,16 @@ int main() {
 
     ui->on_abrir_proyector([proyector]() mutable { proyector->window().set_position(slint::PhysicalPosition({1920, 0})); proyector->window().set_fullscreen(true); proyector->show(); });
     
-    ui->on_proyectar_estrofa([proyector](slint::SharedString texto, slint::SharedString referencia) mutable { 
+    ui->on_proyectar_estrofa([proyector, &app_state](slint::SharedString texto, slint::SharedString referencia) mutable {
         proyector->set_texto_proyeccion(texto); 
+
+        std::string ref_str = std::string(referencia);
+    if (!ref_str.empty()) {
+        std::string sigla = get_sigla_version(app_state);
+        if (!sigla.empty()) ref_str = ref_str + "  |  " + sigla;
+        // Resultado final en proyector: "Ester 8:9  |  RVR"
+    }
+
         proyector->set_referencia(referencia); 
         
         // --- REDIMENSIONAMIENTO INTELIGENTE ---
@@ -398,7 +417,11 @@ int main() {
                     
                     // CORRECCIÓN: Le decimos a Slint cuál es el activo, pero manteniendo toda la lista
                     ui->set_active_estrofa_index(target_index); 
-                    
+
+                    const float ITEM_HEIGHT = 128.0f; 
+                    float scroll_y = target_index * ITEM_HEIGHT;
+                    ui->set_scroll_to_y(scroll_y); 
+                        
                     if (!diapos_slint.empty() && target_index < diapos_slint.size()) {
                         ui->invoke_proyectar_estrofa(diapos_slint[target_index].texto, slint::SharedString(titulo + ":" + std::string(diapos_slint[target_index].orden)));
                     }
