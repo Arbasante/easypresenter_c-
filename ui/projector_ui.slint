@@ -2,43 +2,37 @@ export component ProjectorWindow inherits Window {
     background: black;
     in property <string> texto_proyeccion: "EASY PRESENTER";
     in property <string> referencia: "";
+    // Variable mágica que controlaremos desde C++
+    in property <length> tamano_letra: 85px; 
 
-    // CAPA 1: TEXTO PRINCIPAL (Centrado en toda la pantalla con márgenes)
     VerticalLayout {
-        padding: 60px; // Esto hace el efecto de los márgenes (10%) de forma segura
-        alignment: center; // Lo centra verticalmente
-        
-        Text {
-            text: root.texto_proyeccion;
-            color: white;
-            font-size: 56px;
-            font-weight: 700;
-            wrap: word-wrap;
-            horizontal-alignment: center; // Lo centra horizontalmente
-        }
-    }
+        padding: 40px; // Margen de seguridad alrededor de toda la pantalla
+        spacing: 20px; // Espacio fijo entre el texto y la cita bíblica
 
-    // CAPA 2: REFERENCIA BÍBLICA (Superpuesta abajo a la derecha)
-    if (root.referencia != "") : VerticalLayout {
-        alignment: end; // Lo empuja hacia abajo
-        
-        HorizontalLayout {
-            alignment: end; // Lo empuja hacia la derecha
-            padding: 40px;  // Margen desde los bordes de la pantalla
+        // CAJA 1: TEXTO PRINCIPAL (Ocupa todo el espacio disponible arriba)
+        Rectangle {
+            vertical-stretch: 1; // Fuerza a esta caja a expandirse
             
-            Text { 
-                text: root.referencia; 
-                color: white; 
-                font-size: 32px; 
-                font-weight: 800; 
-                font-italic: true; 
+            Text {
+                width: 100%; 
+                height: 100%;
+                text: root.texto_proyeccion;
+                color: white;
+                font-size: root.tamano_letra; // Recibe el cálculo inteligente de C++
+                font-weight: 700;
+                wrap: word-wrap;
+                horizontal-alignment: center;
+                vertical-alignment: center; // Lo centra perfecto en su propia caja
             }
-            Text { 
-                text: " |"; 
-                color: #0ea5e9; 
-                font-size: 32px; 
-                font-weight: 900; 
-            }
+        }
+
+        // CAJA 2: REFERENCIA BÍBLICA (Protegida en la parte inferior)
+        if (root.referencia != "") : HorizontalLayout {
+            alignment: end; // Alineado a la derecha
+            height: 45px;   // Altura fija, el texto principal jamás la aplastará
+            
+            Text { text: root.referencia; color: white; font-size: 32px; font-weight: 800; font-italic: true; vertical-alignment: bottom;}
+            Text { text: " |"; color: #0ea5e9; font-size: 32px; font-weight: 900; vertical-alignment: bottom;}
         }
     }
 }

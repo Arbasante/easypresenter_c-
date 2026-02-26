@@ -105,34 +105,53 @@ private:
             while (sqlite3_step(stmt) == SQLITE_ROW) {
                 int id = sqlite3_column_int(stmt, 0); 
                 std::string nombre_bd = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-                std::string n_lower = to_lower(nombre_bd);
                 
                 std::string sigla = "OTRA"; 
                 std::string nombre_comp = nombre_bd;
                 int prioridad = 999; 
 
-                // Lógica de Alias (Siglas) y Nombres Completos Oficiales
-                if (n_lower.find("reina") != std::string::npos || n_lower.find("1960") != std::string::npos) { 
+                // --- BÚSQUEDA EXACTA ---
+                // Comparamos exactamente con los nombres de tu base de datos
+                
+                if (nombre_bd == "ReinaValera1960") { 
                     sigla = "RVR"; nombre_comp = "Reina Valera 1960"; prioridad = 0; 
                 }
-                else if (n_lower.find("nvi") != std::string::npos) { 
+                else if (nombre_bd == "NuevaVersiónInternacional") { 
                     sigla = "NVI"; nombre_comp = "Nueva Versión Internacional"; prioridad = 1; 
                 }
-                else if (n_lower.find("ntv") != std::string::npos) { 
+                else if (nombre_bd == "NuevaTraduccionViviente") { 
                     sigla = "NTV"; nombre_comp = "Nueva Traducción Viviente"; prioridad = 2; 
                 }
-                else if (n_lower.find("lbla") != std::string::npos || n_lower.find("americas") != std::string::npos) { 
+                else if (nombre_bd == "BibliaDeLasAméricas") { 
                     sigla = "LBLA"; nombre_comp = "La Biblia de las Américas"; prioridad = 3; 
                 }
-                else if (n_lower.find("tla") != std::string::npos) { 
-                    sigla = "TLA"; nombre_comp = "Traducción en Lenguaje Actual"; prioridad = 4; 
+                else if (nombre_bd == "NuevaBibliadelasAméricas") { 
+                    sigla = "NBLA"; nombre_comp = "Nueva Biblia de las Américas"; prioridad = 4; 
                 }
-                else if (n_lower.find("dhh") != std::string::npos || n_lower.find("interconfesional") != std::string::npos) { 
-                    sigla = "DHH"; nombre_comp = "Dios Habla Hoy"; prioridad = 5; 
+                else if (nombre_bd == "TraduccionLenguajeActual") { 
+                    sigla = "TLA"; nombre_comp = "Traducción en Lenguaje Actual"; prioridad = 5; 
+                }
+                else if (nombre_bd == "DiosHablaHoy") { 
+                    sigla = "DHH"; nombre_comp = "Dios Habla Hoy"; prioridad = 6; 
+                }
+                else if (nombre_bd == "LaPalabra") { 
+                    sigla = "BLP"; nombre_comp = "La Palabra"; prioridad = 7; 
+                }
+                else if (nombre_bd == "TraduccionInterconfesionalVersionHispanoamericana") { 
+                    sigla = "TIVH"; nombre_comp = "Trad. Interconfesional Hispanoamericana"; prioridad = 8; 
+                }
+                else if (nombre_bd == "BibliaTextual") { 
+                    sigla = "BTX"; nombre_comp = "Biblia Textual"; prioridad = 9; 
+                }
+                else if (nombre_bd == "BibliaJubileo") { 
+                    sigla = "JUB"; nombre_comp = "Biblia del Jubileo"; prioridad = 10; 
+                }
+                else if (nombre_bd == "BibliadelOso1573") { 
+                    sigla = "OSO"; nombre_comp = "Biblia del Oso 1573"; prioridad = 11; 
                 }
                 else {
-                    // Si metes una biblia nueva rara, agarra las primeras 4 letras en mayúscula
-                    sigla = nombre_bd.substr(0, 4);
+                    // Por si en el futuro agregas una biblia que no está en esta lista
+                    sigla = nombre_bd.length() >= 4 ? nombre_bd.substr(0, 4) : nombre_bd;
                     std::transform(sigla.begin(), sigla.end(), sigla.begin(), ::toupper);
                 }
 
@@ -140,7 +159,11 @@ private:
             }
         } sqlite3_finalize(stmt);
         
-        std::sort(versiones_cargadas.begin(), versiones_cargadas.end(), [](const VersionInfo& a, const VersionInfo& b) { return a.prioridad < b.prioridad; });
+        // Ordenamos por la prioridad que asignaste arriba (0, 1, 2, 3...)
+        std::sort(versiones_cargadas.begin(), versiones_cargadas.end(), [](const VersionInfo& a, const VersionInfo& b) { 
+            return a.prioridad < b.prioridad; 
+        });
+
         if (!versiones_cargadas.empty()) current_version_id = versiones_cargadas[0].id;
     }
 
@@ -275,6 +298,21 @@ int main() {
     ui->on_proyectar_estrofa([proyector](slint::SharedString texto, slint::SharedString referencia) mutable { 
         proyector->set_texto_proyeccion(texto); 
         proyector->set_referencia(referencia); 
+        
+        // --- REDIMENSIONAMIENTO INTELIGENTE ---
+        // Calculamos cuántos caracteres tiene el texto entrante
+        size_t len = std::string(texto).length();
+        float font_size = 85.0f; // Tamaño gigante para 1 o 2 líneas (ej: "Aleluya")
+        
+        // Escala calibrada dinámicamente:
+        if (len >= 450) font_size = 32.0f;       // Textos masivos (como Ester 8:9)
+        else if (len >= 320) font_size = 38.0f;  // Textos muy largos
+        else if (len >= 220) font_size = 46.0f;  // Textos largos
+        else if (len >= 120) font_size = 56.0f;  // Textos medianos
+        else if (len >= 60)  font_size = 68.0f;  // Textos cortos
+        
+        // Enviamos el tamaño calculado a la interfaz gráfica de Slint
+        proyector->set_tamano_letra(font_size); 
     });
 
     auto versiones = app_state.get_versiones();
@@ -339,21 +377,30 @@ int main() {
 
                 app_state.get_capitulo_async(libro_id, capitulo, [ui, versiculo_objetivo, titulo](std::vector<Versiculo> versiculos) {
                     std::vector<DiapositivaUI> diapos_slint;
+                    int target_index = 0;
+                    int current_idx = 0;
                     
+                    // CORRECCIÓN: Cargamos TODOS los versículos para que el Scroll funcione
                     for(const auto& v : versiculos) {
-                        if (v.versiculo >= versiculo_objetivo) {
-                            diapos_slint.push_back(DiapositivaUI{ 
-                                slint::SharedString(std::to_string(v.versiculo)), 
-                                slint::SharedString(v.texto) 
-                            });
+                        diapos_slint.push_back(DiapositivaUI{ 
+                            slint::SharedString(std::to_string(v.versiculo)), 
+                            slint::SharedString(v.texto) 
+                        });
+                        
+                        // Capturamos el índice exacto del versículo buscado
+                        if (v.versiculo == versiculo_objetivo) {
+                            target_index = current_idx;
                         }
+                        current_idx++;
                     }
                     
                     ui->set_estrofas_actuales(std::make_shared<slint::VectorModel<DiapositivaUI>>(diapos_slint));
-                    ui->set_active_estrofa_index(0); 
                     
-                    if (!diapos_slint.empty()) {
-                        ui->invoke_proyectar_estrofa(diapos_slint[0].texto, slint::SharedString(titulo + ":" + std::string(diapos_slint[0].orden)));
+                    // CORRECCIÓN: Le decimos a Slint cuál es el activo, pero manteniendo toda la lista
+                    ui->set_active_estrofa_index(target_index); 
+                    
+                    if (!diapos_slint.empty() && target_index < diapos_slint.size()) {
+                        ui->invoke_proyectar_estrofa(diapos_slint[target_index].texto, slint::SharedString(titulo + ":" + std::string(diapos_slint[target_index].orden)));
                     }
                     ui->invoke_focus_panel();
                 });
@@ -361,7 +408,6 @@ int main() {
             }
         }
     });
-
     ui->on_bible_book_selected([ui](BookInfo book) {
         std::vector<ChapterRow> filas; std::vector<int> fila_actual;
         for (int i = 1; i <= book.capitulos; ++i) {
