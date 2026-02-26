@@ -1,0 +1,44 @@
+export component ProjectorWindow inherits Window {
+    background: black;
+    in property <string> texto_proyeccion: "EASY PRESENTER";
+    in property <string> referencia: "";
+
+    // CAPA 1: TEXTO PRINCIPAL (Centrado en toda la pantalla con márgenes)
+    VerticalLayout {
+        padding: 60px; // Esto hace el efecto de los márgenes (10%) de forma segura
+        alignment: center; // Lo centra verticalmente
+        
+        Text {
+            text: root.texto_proyeccion;
+            color: white;
+            font-size: 56px;
+            font-weight: 700;
+            wrap: word-wrap;
+            horizontal-alignment: center; // Lo centra horizontalmente
+        }
+    }
+
+    // CAPA 2: REFERENCIA BÍBLICA (Superpuesta abajo a la derecha)
+    if (root.referencia != "") : VerticalLayout {
+        alignment: end; // Lo empuja hacia abajo
+        
+        HorizontalLayout {
+            alignment: end; // Lo empuja hacia la derecha
+            padding: 40px;  // Margen desde los bordes de la pantalla
+            
+            Text { 
+                text: root.referencia; 
+                color: white; 
+                font-size: 32px; 
+                font-weight: 800; 
+                font-italic: true; 
+            }
+            Text { 
+                text: " |"; 
+                color: #0ea5e9; 
+                font-size: 32px; 
+                font-weight: 900; 
+            }
+        }
+    }
+}

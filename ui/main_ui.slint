@@ -1,0 +1,342 @@
+import { VerticalBox, HorizontalBox, ScrollView, ComboBox } from "std-widgets.slint";
+import { ProjectorWindow } from "projector_ui.slint";
+import "./fonts/Inter.ttf";
+export { ProjectorWindow }
+
+export struct Canto { id: int, titulo: string, letra: string }
+export struct BookInfo { id: int, nombre: string, capitulos: int }
+export struct DiapositivaUI { orden: string, texto: string } 
+export struct ChapterRow { caps: [int] } 
+
+component CustomDropdown inherits Rectangle {
+    in property <[string]> model;
+    in-out property <string> current-value;
+    callback selected(string);
+
+    width: 240px; height: 32px; // Un poco más ancho por si los nombres son largos
+    background: #1f1f1f;
+    border-radius: 4px; border-width: 1px;
+    border-color: touch.has-hover ? #0ea5e9 : rgba(255,255,255,0.08);
+
+    HorizontalLayout {
+        padding-left: 12px; padding-right: 12px; spacing: 8px;
+        Text { text: "📖"; vertical-alignment: center; font-size: 12px; }
+        // CORRECCIÓN 1: Alineado a la izquierda
+        Text { text: root.current-value; color: #0ea5e9; font-size: 11px; font-weight: 700; vertical-alignment: center; horizontal-alignment: left; horizontal-stretch: 1; overflow: elide; }
+        Text { text: "▼"; color: #0ea5e9; font-size: 8px; vertical-alignment: center; }
+    }
+
+    touch := TouchArea { clicked => { popup.show(); } }
+
+    popup := PopupWindow {
+        x: 0; y: root.height + 4px; width: root.width;
+        
+        Rectangle {
+            // CORRECCIÓN 2: Altura fija (220px) y clip para activar el ScrollView
+            height: 220px; 
+            background: #1f1f1f;
+            border-radius: 6px; border-width: 1px; border-color: rgba(255,255,255,0.1);
+            drop-shadow-color: rgba(0,0,0,0.5); drop-shadow-blur: 10px;
+            clip: true; // Esto corta lo que sobra y fuerza el scroll
+            
+            ScrollView {
+                width: 100%; height: 100%;
+                VerticalLayout {
+                    padding: 4px; spacing: 2px;
+                    alignment: start; // Que los items empiecen desde arriba
+                    for val in root.model : Rectangle {
+                        height: 32px; border-radius: 4px;
+                        background: val-touch.has-hover ? rgba(14, 165, 233, 0.2) : transparent;
+                        
+                        val-touch := TouchArea {
+                            clicked => {
+                                root.current-value = val;
+                                root.selected(val);
+                                // CORRECCIÓN 3: ¡Esto es vital para cerrar el menú y aplicar el cambio!
+                                popup.close(); 
+                            }
+                        }
+                        
+                        HorizontalLayout {
+                            padding-left: 8px; padding-right: 8px; spacing: 8px;
+                            Text { text: "📑"; color: val-touch.has-hover ? #0ea5e9 : #6b7280; vertical-alignment: center; font-size: 10px; }
+                            // CORRECCIÓN 1: Alineado a la izquierda
+                            Text { text: val; color: #0ea5e9; font-size: 11px; vertical-alignment: center; horizontal-alignment: left; horizontal-stretch: 1; overflow: elide; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component MenuButton inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <bool> active: false;
+    callback clicked;
+    height: 24px; border-radius: 6px; background: root.active ? #0ea5e9 : transparent;
+    touch := TouchArea { clicked => { root.clicked(); } }
+    HorizontalLayout {
+        padding-left: 6px; padding-right: 10px; spacing: 6px; alignment: start; 
+        Text { text: root.icon; color: root.active ? white : #9ca3af; font-size: 10px; vertical-alignment: center; }
+        Text { text: root.text; color: root.active ? white : #929aa7; font-size: 11px; font-weight: 500; vertical-alignment: center; }
+        Rectangle { horizontal-stretch: 1; } 
+    }
+}
+
+export component AppWindow inherits Window {
+    min-width: 800px; min-height: 600px; background: #18181b; 
+    default-font-family: "Inter";
+
+    in-out property <string> active-tab: "cantos";
+    in property <[Canto]> cantos: [];
+    in-out property <string> buscador_texto: "";
+    in-out property <string> elemento_seleccionado: "";
+    in property <[DiapositivaUI]> estrofas_actuales: []; 
+    in-out property <int> active_estrofa_index: -1;
+
+    in-out property <bool> mostrar_formulario: false;
+    in-out property <int> form_id: -1;
+    in-out property <string> form_titulo: "";
+    in-out property <string> form_letra: "";
+
+    in property <[string]> bible-versions: [];
+    in-out property <string> current-bible-version: "";
+    in property <string> current-bible-full-name: ""; 
+    in property <[BookInfo]> bible-books: [];
+    in-out property <string> bible-search-text: "";
+    in-out property <string> bible-search-suggestion: "";
+    in-out property <bool> show-bible-chapters: false;
+    in-out property <BookInfo> selected-bible-book;
+    in property <[ChapterRow]> chapter-rows: [];
+
+    callback buscar_cantos(string);
+    callback abrir_proyector();
+    callback seleccionar_canto(int);
+    
+    // AHORA RECIBE 2 PARÁMETROS: Texto y Referencia
+    callback proyectar_estrofa(string, string); 
+    
+    callback cargar_datos_edicion(int);
+    callback guardar_canto(int, string, string);
+    callback eliminar_canto(int);
+
+    callback bible-version-changed(string);
+    callback bible-search-changed(string);
+    callback bible-search-accepted(string);
+    callback bible-book-selected(BookInfo);
+    callback bible-chapter-selected(int);
+
+    public function focus_panel() { panel-focus.focus(); }
+
+    HorizontalLayout {
+        // ── COLUMNA 1: SIDEBAR IZQUIERDO ──
+        Rectangle {
+            width: 240px; background: #111111;
+            VerticalLayout {
+                Rectangle { height: 48px; HorizontalLayout { padding-left: 16px; padding-right: 16px; spacing: 8px; Text { text: "🖥️"; font-size: 16px; vertical-alignment: center; color: #0ea5e9; } Text { text: "EASY PRESENTER"; color: #f3f4f6; font-size: 13px; font-weight: 900; vertical-alignment: center; } } Rectangle { y: parent.height - 1px; height: 1px; background: rgba(255, 255, 255, 0.08); } }
+                VerticalLayout { padding-left: 12px; padding-right: 12px; padding-top: 12px; spacing: 4px; MenuButton { icon: "🎵"; text: "Cantos"; active: root.active-tab == "cantos"; clicked => { root.active-tab = "cantos"; } } MenuButton { icon: "📖"; text: "Biblias"; active: root.active-tab == "biblias"; clicked => { root.active-tab = "biblias"; } } VerticalLayout { padding-top: 20px; padding-bottom: 6px; Text { text: "MULTIMEDIA"; color: #4b5563; font-size: 9px; font-weight: 700; } } MenuButton { icon: "🖼️"; text: "Imágenes"; active: false; } MenuButton { icon: "📹"; text: "Videos"; active: false; } MenuButton { icon: "📄"; text: "Presentación PDF"; active: false; } }
+                Rectangle { height: 8px; }
+                Rectangle { vertical-stretch: 1; background: rgba(0, 0, 0, 0.2); VerticalLayout { padding: 12px; HorizontalLayout { spacing: 8px; padding-bottom: 12px; alignment: start; Text { text: "⭐"; color: #ca8a04; font-size: 10px; vertical-alignment: center; } Text { text: "FAVORITOS (0)"; color: #ca8a04; font-size: 9px; font-weight: 700; vertical-alignment: center; } Rectangle { horizontal-stretch: 1; } } Rectangle { border-width: 1px; border-color: rgba(255, 255, 255, 0.15); border-radius: 6px; vertical-stretch: 1; Text { text: "SELECCIONA LA ESTRELLA\nPARA AÑADIR AQUÍ"; color: #6b7280; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } } } }
+            }
+        }
+
+        // ── COLUMNA 2: PANEL CENTRAL ──
+        Rectangle {
+            horizontal-stretch: 1; background: #18181b;
+            VerticalLayout {
+                Rectangle { 
+                    height: 48px; background: #18181b; 
+                    HorizontalLayout { 
+                        padding-left: 24px; padding-right: 16px; 
+                        Text { 
+                            text: root.elemento_seleccionado == "" ? "PANEL DE EDICIÓN" : "📖 " + root.elemento_seleccionado; 
+                            color: root.elemento_seleccionado == "" ? #6b7280 : #0ea5e9; 
+                            font-size: 12px; font-weight: 900; vertical-alignment: center; horizontal-stretch: 1; 
+                        } 
+                        Rectangle { width: 32px; height: 32px; border-radius: 6px; background: transparent; Text { text: "⚙"; font-size: 16px; color: #6b7280; horizontal-alignment: center; vertical-alignment: center; } } 
+                    } 
+                    Rectangle { y: parent.height - 1px; height: 1px; background: rgba(255, 255, 255, 0.06); } 
+                }
+
+                panel-focus := FocusScope {
+                    vertical-stretch: 1;
+                    key-pressed(event) => {
+                        if (root.estrofas_actuales.length > 0) {
+                            if (event.text == Key.UpArrow) {
+                                if (root.active_estrofa_index > 0) {
+                                    root.active_estrofa_index -= 1;
+                                    root.proyectar_estrofa(root.estrofas_actuales[root.active_estrofa_index].texto, root.active-tab == "biblias" ? root.elemento_seleccionado + ":" + root.estrofas_actuales[root.active_estrofa_index].orden : "");
+                                }
+                                return accept;
+                            }
+                            if (event.text == Key.DownArrow) {
+                                if (root.active_estrofa_index < root.estrofas_actuales.length - 1) {
+                                    root.active_estrofa_index += 1;
+                                    root.proyectar_estrofa(root.estrofas_actuales[root.active_estrofa_index].texto, root.active-tab == "biblias" ? root.elemento_seleccionado + ":" + root.estrofas_actuales[root.active_estrofa_index].orden : "");
+                                } else if (root.active_estrofa_index == -1) {
+                                    root.active_estrofa_index = 0;
+                                    root.proyectar_estrofa(root.estrofas_actuales[root.active_estrofa_index].texto, root.active-tab == "biblias" ? root.elemento_seleccionado + ":" + root.estrofas_actuales[root.active_estrofa_index].orden : "");
+                                }
+                                return accept;
+                            }
+                        }
+                        return reject;
+                    }
+
+                    Rectangle {
+                        width: 100%; height: 100%; background: #18181b;
+                        if (root.estrofas_actuales.length == 0) : VerticalLayout { alignment: center; spacing: 16px; Text { text: "𝅘𝅥𝅮𝅘𝅥𝅮"; color: #374151; font-size: 48px; horizontal-alignment: center; } Text { text: root.elemento_seleccionado == "" ? "SELECCIONA UN ARCHIVO DE LA BIBLIOTECA" : root.elemento_seleccionado; color: #374151; font-size: 13px; font-weight: 700; horizontal-alignment: center; } }
+                        
+                        if (root.estrofas_actuales.length > 0) : ScrollView {
+                            VerticalLayout {
+                                padding: 24px; spacing: 16px;
+                                for estrofa[idx] in root.estrofas_actuales : Rectangle {
+                                    background: idx == root.active_estrofa_index ? rgba(220, 38, 38, 0.15) : (touch-estrofa.has-hover ? rgba(14, 165, 233, 0.1) : rgba(255, 255, 255, 0.02));
+                                    border-radius: 8px; border-width: 1px; border-color: idx == root.active_estrofa_index ? #dc2626 : (touch-estrofa.has-hover ? #0ea5e9 : rgba(255,255,255,0.05));
+                                    touch-estrofa := TouchArea { clicked => { root.active_estrofa_index = idx; root.proyectar_estrofa(estrofa.texto, root.active-tab == "biblias" ? root.elemento_seleccionado + ":" + estrofa.orden : ""); panel-focus.focus(); } }
+                                    HorizontalLayout {
+                                        padding: 16px; spacing: 16px;
+                                        Text { text: estrofa.orden; color: idx == root.active_estrofa_index ? #dc2626 : #0ea5e9; font-weight: 900; font-size: 12px; vertical-alignment: top; width: 20px;}
+                                        Text { text: estrofa.texto; color: idx == root.active_estrofa_index ? white : (touch-estrofa.has-hover ? white : #e5e7eb); font-size: 18px; wrap: word-wrap; horizontal-stretch: 1; }
+                                        Rectangle { width: 80px; height: 24px; border-radius: 4px; border-width: 1px; background: idx == root.active_estrofa_index ? #dc2626 : transparent; border-color: idx == root.active_estrofa_index ? #dc2626 : (touch-estrofa.has-hover ? #0ea5e9 : rgba(255,255,255,0.1)); Text { text: idx == root.active_estrofa_index ? "EN VIVO" : "PROYECTAR"; color: idx == root.active_estrofa_index ? white : (touch-estrofa.has-hover ? #0ea5e9 : #4b5563); font-size: 9px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── COLUMNA 3: SIDEBAR DERECHO ──
+        Rectangle {
+            width: 300px; background: #111111;
+            VerticalLayout {
+                Rectangle { height: 48px; background: #1a1a1a; Text { text: "BIBLIOTECA"; color: #9ca3af; font-size: 10px; font-weight: 700; vertical-alignment: center; x: 16px; } Rectangle { y: parent.height - 1px; height: 1px; background: rgba(255, 255, 255, 0.05); } }
+                Rectangle {
+                    vertical-stretch: 1;
+
+                    // --- VISTA CANTOS ---
+                    if (root.active-tab == "cantos") : VerticalLayout {
+                        Rectangle { height: 52px; Rectangle { height: 32px; x: 10px; y: 10px; width: parent.width - 20px; border-radius: 4px; background: #1f1f1f; border-width: 1px; border-color: rgba(255,255,255,0.08); HorizontalLayout { padding-left: 10px; spacing: 6px; Text { text: "🔍"; font-size: 10px; color: #4b5563; vertical-alignment: center; } TextInput { text <=> root.buscador_texto; font-size: 10px; color: #f3f4f6; vertical-alignment: center; horizontal-stretch: 1; edited => { root.buscar_cantos(self.text); } } } } }
+                        Rectangle {
+                            vertical-stretch: 1; background: rgba(0, 0, 0, 0.3);
+                            ScrollView {
+                                VerticalLayout {
+                                    padding-left: 4px; padding-right: 4px; padding-top: 4px; spacing: 0px;
+                                    for canto in root.cantos : Rectangle {
+                                        height: 36px; background: touch-canto.has-hover ? rgba(14, 165, 233, 0.2) : transparent;
+                                        touch-canto := TouchArea { clicked => { root.seleccionar_canto(canto.id); } }
+                                        HorizontalLayout { padding-left: 10px; padding-right: 10px; spacing: 8px; Text { text: canto.titulo; color: #e5e7eb; font-size: 11px; font-weight: 700; vertical-alignment: center; horizontal-stretch: 1; } }
+                                        Rectangle { y: parent.height - 1px; height: 1px; background: rgba(255, 255, 255, 0.05); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // --- VISTA BIBLIAS ---
+                    if (root.active-tab == "biblias") : VerticalLayout {
+                        padding: 10px; spacing: 10px;
+
+                        HorizontalLayout {
+                            height: 32px;
+                            spacing: 8px;
+
+                            CustomDropdown {
+                                width: 140px; 
+                                model: root.bible-versions;
+                                current-value <=> root.current-bible-version;
+                                selected(val) => { root.bible-version-changed(val); }
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: #1f1f1f; border-radius: 4px; border-width: 1px; border-color: rgba(255, 255, 255, 0.08);
+                                HorizontalLayout {
+                                    padding-left: 8px; padding-right: 8px; spacing: 6px;
+                                    Text { text: "🔍"; font-size: 10px; color: #4b5563; vertical-alignment: center; }
+                                    
+                                    search_focus := FocusScope {
+                                        horizontal-stretch: 1;
+                                        forward-focus: search_input;
+                                        
+                                        key-pressed(event) => {
+                                            if (event.text == Key.Tab || event.text == Key.RightArrow) {
+                                                if (root.bible-search-suggestion != "" && root.bible-search-suggestion != root.bible-search-text) {
+                                                    root.bible-search-text = root.bible-search-suggestion + " ";
+                                                    root.bible-search-suggestion = "";
+                                                    root.bible-search-changed(root.bible-search-text);
+                                                    search_input.set-selection-offsets(999, 999);
+                                                    return accept;
+                                                }
+                                            }
+                                            return reject;
+                                        }
+
+                                        Rectangle {
+                                            width: 100%; height: 100%;
+                                            Text { text: root.bible-search-suggestion; color: #4b5563; font-size: 10px; vertical-alignment: center; horizontal-alignment: left; width: 100%; }
+                                            search_input := TextInput {
+                                                width: 100%; height: 100%; text <=> root.bible-search-text; color: #f3f4f6; font-size: 10px; vertical-alignment: center;
+                                                edited => { root.bible-search-changed(self.text); }
+                                                accepted => { root.bible-search-accepted(self.text); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Lista de Libros
+                        if (!root.show-bible-chapters) : Rectangle {
+                            vertical-stretch: 1; background: rgba(0, 0, 0, 0.3); border-radius: 8px;
+                            ScrollView {
+                                VerticalLayout {
+                                    padding: 4px;
+                                    for book in root.bible-books : Rectangle {
+                                        height: 36px; background: touch-book.has-hover ? rgba(14, 165, 233, 0.2) : transparent;
+                                        touch-book := TouchArea { clicked => { root.selected-bible-book = book; root.show-bible-chapters = true; root.bible-book-selected(book); } }
+                                        HorizontalLayout { padding-left: 8px; padding-right: 8px; Text { text: book.nombre; color: touch-book.has-hover ? white : #9ca3af; font-size: 11px; font-weight: 700; vertical-alignment: center; } Rectangle { horizontal-stretch: 1; } }
+                                        Rectangle { y: parent.height - 1px; height: 1px; background: rgba(255, 255, 255, 0.05); }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Matriz de Capítulos
+                        if (root.show-bible-chapters) : Rectangle {
+                            vertical-stretch: 1; background: rgba(0, 0, 0, 0.3); border-radius: 8px;
+                            VerticalLayout {
+                                Rectangle {
+                                    height: 36px; touch-back := TouchArea { clicked => { root.show-bible-chapters = false; } }
+                                    HorizontalLayout { padding-left: 12px; spacing: 8px; Text { text: "<"; color: #0ea5e9; font-weight: 900; vertical-alignment: center;} Text { text: root.selected-bible-book.nombre; color: #0ea5e9; font-size: 11px; font-weight: 900; vertical-alignment: center; } }
+                                    Rectangle { y: parent.height - 1px; height: 1px; background: rgba(255, 255, 255, 0.05); }
+                                }
+                                ScrollView {
+                                    VerticalLayout {
+                                        padding: 12px; spacing: 8px; alignment: start;
+                                        for row in root.chapter-rows : HorizontalLayout {
+                                            spacing: 8px; height: 42px;
+                                            for cap in row.caps : Rectangle {
+                                                width: 42px; border-radius: 6px; border-width: 1px; border-color: rgba(255,255,255,0.05);
+                                                background: touch-cap.has-hover ? #0ea5e9 : #1f1f1f;
+                                                touch-cap := TouchArea { clicked => { root.bible-chapter-selected(cap); } }
+                                                Text { text: cap; color: touch-cap.has-hover ? white : #d1d5db; font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                                            }
+                                            Rectangle { horizontal-stretch: 1; } 
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                VerticalLayout { padding-left: 16px; padding-right: 16px; padding-top: 12px; spacing: 0px; HorizontalLayout { alignment: start; Rectangle { width: 105px; height: 22px; background: #0ea5e9; border-top-left-radius: 6px; border-top-right-radius: 6px; HorizontalLayout { alignment: center; spacing: 4px; Text { text: "⚙"; font-size: 10px; color: white; vertical-alignment: center; } Text { text: "PERSONALIZAR"; font-size: 8px; font-weight: 800; letter-spacing: 0.5px; color: white; vertical-alignment: center; } } } } Rectangle { height: 112px; background: #050505; border-width: 1px; border-color: rgba(255, 255, 255, 0.1); border-radius: 6px; border-top-left-radius: 0px; Text { text: "MONITOR"; color: rgba(255, 255, 255, 0.2); font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; } } }
+                Rectangle { height: 72px; background: #111111; Rectangle { height: 40px; width: parent.width - 32px; x: 16px; y: 16px; border-radius: 20px; background: #dc2626; drop-shadow-color: rgba(220, 38, 38, 0.3); drop-shadow-blur: 10px; drop-shadow-offset-y: 4px; touch-proyector := TouchArea { clicked => { root.abrir_proyector(); } } HorizontalLayout { alignment: center; spacing: 8px; Text { text: "📽"; font-size: 14px; color: white; vertical-alignment: center; } Text { text: "ABRIR PROYECTOR"; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: white; vertical-alignment: center; } } } }
+            }
+        }
+    }
+}
